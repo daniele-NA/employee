@@ -1,107 +1,90 @@
+#ifndef JSONMANAGER_PERSON_H
+#define JSONMANAGER_PERSON_H
 
-#ifndef TEST_PERSONA_H
-#define TEST_PERSONA_H
-
-#include <string>
 #include <stdexcept>
-#include "../utils/Function.h"  // metodi di controllo
-
+#include <string>
+#include <utility>
+#include "../utils/Function.h"
 
 using namespace std;
 
 /**
- * questo file si prenderà poi le implementazioni del .cpp
- *   <blockquote><pre>
- *   ABSTRACT CLASS
- * </pre></blockquote>
+ * Abstract base class for any person-like entity managed by the program.
+ *
+ * Invariants enforced by the constructor:
+ *  - name, surname and tax_code are non-empty (after trim)
+ *  - tax_code is exactly 16 characters long
+ *  - age is in [18, 65)
+ *
+ * The only mutable field is age — name/surname/tax_code identify the person
+ * and have no setter. Subclasses may add their own mutable fields.
+ *
  * @author Daniele
  */
 class Person {
-    /**
-     * l'unica variabile che può cambiare è l'età
-     * il resto è univoco, dato che non fornisco metodi SETTER
-     */
 private:
     string name;
     string surname;
-    string tax_code;   //QUESTA è LA CHIAVE SULLA QUALE SI CICLA E SI FA LA RICERCA
-    int age;
+    string tax_code;   // Acts as the unique identifier for searches.
+    int    age;
+
 public:
-
     /**
-     * controllo dei parametri e assegnazione
-     * @param name [string]
-     * @param surname [string]
-     * @param tax_code [string]
-     * @param age [int]
+     * Validates and assigns each field. Strings are trimmed before validation.
+     * @throws runtime_error if any invariant is violated.
      */
-    Person(string name, string surname, string tax_code, int age) {
-        name = Function::trim(name);     // Trim del nome
-        surname = Function::trim(surname); // Trim del cognome
-        tax_code = Function::trim(tax_code); //trim tax_code
+    Person(string n, string s, string tc, int a) {
+        n  = Function::trim(n);
+        s  = Function::trim(s);
+        tc = Function::trim(tc);
 
+        checkStr(n);
+        checkStr(s);
+        checkStr(tc);
+        checkAge(a);
 
-        checkStr(name);
-        checkStr(surname);
-        checkStr(tax_code);
-        checkAge(age);
-
-        if(tax_code.size()!=16){
-            throw runtime_error("Codice fiscale non valido");
+        if (tc.size() != 16) {
+            throw runtime_error("Invalid tax code (must be 16 characters)");
         }
 
-
-        this->name = name;
-        this->surname = surname;
-        this->tax_code=tax_code;
-        this->age = age;
+        name     = std::move(n);
+        surname  = std::move(s);
+        tax_code = std::move(tc);
+        age      = a;
     }
 
-    /**
-     * si mantiene questo metodo pubblico,
-     * in modo da poter essere usato dalle sottoclassi
-     * @param str [string]
-     */
-    void checkStr(const string &str) {
-        if (str.empty()) {
-            throw runtime_error("Stringa vuota");
+    virtual ~Person() = default;
+
+    /** Reusable validator: rejects empty strings. */
+    void checkStr(const string &s) const {
+        if (s.empty()) {
+            throw runtime_error("Empty string is not allowed");
         }
     }
 
-
-    /**
-     * si mantiene questo metodo pubblico,
-     * in modo da poter essere usato dalle sottoclassi
-     * @param &a [int]
-     */
-    void checkAge(const int &a){
+    /** Reusable validator: enforces a working-age range. */
+    void checkAge(int a) const {
         if (a < 18 || a >= 65) {
-            throw runtime_error("Età non valida");
+            throw runtime_error("Age must be between 18 and 64");
         }
     }
 
-    const string &getName() {
-        return name;
+    const string &getName()    const { return name; }
+    const string &getSurname() const { return surname; }
+    const string &getTaxCode() const { return tax_code; }
+    int           getAge()     const { return age; }
+
+    /** Validated setter — keeps the [18, 65) invariant on every update. */
+    void setAge(int newAge) {
+        checkAge(newAge);
+        age = newAge;
     }
 
-    const string &getSurname() {
-        return surname;
-    }
+    /** Render the person as a human-readable line. */
+    virtual string toString() const = 0;
 
-    const string &getTaxCode() {
-        return tax_code;
-    }
-
-    int &getAge() {
-        return age;
-    }
-
-
-    virtual string toString() = 0;   //metodo virtuale per la stampa
-
-    virtual string hello() = 0;   //metodo virtuale per il saluto da parte del programmatore
-
-
+    /** Render a short greeting from this person. */
+    virtual string hello() const = 0;
 };
 
-#endif //TEST_PERSONA_H
+#endif // JSONMANAGER_PERSON_H

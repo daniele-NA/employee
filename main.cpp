@@ -1,117 +1,200 @@
+#include <exception>
 #include <iostream>
+#include <string>
 #include "storage/Storage.h"
+#include "utils/Function.h"
 
-string inputUser();
+using namespace std;
+
+// ---------------------------------------------------------------- helpers
+
+static void   printMenu();
+static string promptLine(const string &label);
+static string promptSearchKey();
+static int    promptInt(const string &label);
+static void   printList(const vector<string> &items, const string &emptyMessage);
+
+// ------------------------------------------------------------------- main
 
 /**
- * main per interazione con il json
- * @return
+ * Entry point. Drives an interactive REPL on top of Storage:
+ *  - Asks the user for a JSON file path until one loads successfully.
+ *  - Dispatches single-letter commands to Storage operations.
+ *  - Catches and reports every exception so a single typo never kills the loop.
  */
 int main() {
+    cout << "\nWelcome to JsonManager — manage your workers JSON the easy way!\n" << endl;
 
-    cout << "\n\nCiao,benvenuto in JsonManager,qui potrai gestire comodamente il tuo Json!!\n" << endl;
     Storage storage;
-    string path;
-    string name;
-    string surname;
-    string tax_code;
-    int age = 0;
-    string assignment;
-    string search;
 
+    // Path acquisition loop: keep asking until a valid file is loaded.
     while (true) {
         try {
-            cout << "\nInserisci il path del file json : ";
-            getline(cin,path);
+            const string path = promptLine("Path of the JSON file");
             storage = Storage(path);
-            break; //in caso il path sia corretto,esce
-        } catch (exception e) {
-            cerr << e.what();
+            break;
+        } catch (const exception &e) {
+            cerr << "[error] " << e.what() << "\n";
         }
     }
-    cout << "\n";
 
-    cout << "e) esci" << endl;
-    cout << "k) svuota tutto il json" << endl;
-    cout << "p) stampa il contenuto del json" << endl;
-    cout << "n) nuovo lavoratore" << endl;
-    cout << "m) modifica un lavoratore" << endl;
-    cout << "r) rimuovi un lavoratore" << endl;
-    cout << "c) cerca un lavoratore" << endl;
-    cout << "h) un saluto da tutti i lavoratori!!" << endl;
-    cout << "\n";
+    cout << "\nLoaded " << storage.size() << " worker(s).\n";
+    printMenu();
 
+    // Main dispatch loop. We read a whole line and look at its first
+    // non-blank character — this avoids the classic cin/getline buffer
+    // mismatch that plagued the original implementation.
+    string line;
+    while (true) {
+        cout << "\nChoice (? for menu): ";
+        if (!getline(cin, line)) break;
 
-    char choice;
+        const string trimmed = Function::trim(line);
+        if (trimmed.empty()) continue;
+        const char choice = trimmed[0];
 
-    do {
-        try{
-            cout << "\nInserisci scelta : ";
-            cin >> choice;
-            cout << endl;
-            getchar();  //terminazione buffer
+        try {
             switch (choice) {
                 case 'e':
+                    cout << "Bye!\n";
+                    return 0;
+
+                case '?':
+                    printMenu();
                     break;
+
                 case 'k':
                     storage.clear();
-                    cout << "Json svuotato" << endl;
+                    cout << "JSON cleared.\n";
                     break;
+
                 case 'p':
                     cout << storage.printAll();
                     break;
-                case 'n':
-                    cout << "\nnome: ";
-                    getline(cin, name);
 
-                    cout << "\ncognome: ";
-                    getline(cin, surname);
-
-                    cout << "\ncodice fiscale: ";
-                    getline(cin, tax_code);  //permete la lettura con gli spazi
-
-                    cout << "\neta: ";
-                    cin >> age;
-
-                    getchar();
-
-                    cout << "\nruolo: ";
-                    getline(cin, assignment);
-
-                    storage.newWorker(name, surname, tax_code, age, assignment);
+                case 'n': {
+                    const string name       = promptLine("Name");
+                    const string surname    = promptLine("Surname");
+                    const string taxCode    = promptLine("Tax code");
+                    const int    age        = promptInt ("Age");
+                    const string assignment = promptLine("Assignment");
+                    storage.newWorker(name, surname, taxCode, age, assignment);
+                    cout << "Worker added.\n";
                     break;
-                case 'm':
-                    search=inputUser();
-                    cout << "inserisci il nuovo ruolo: ";
-                    getline(cin, assignment);
-                    storage.edit(search,assignment);
+                }
+
+                case 'm': {
+                    const string key      = promptSearchKey();
+                    const string newRole  = promptLine("New assignment");
+                    storage.edit(key, newRole);
+                    cout << "Worker updated.\n";
                     break;
+                }
+
+                case 'a': {
+                    const string key    = promptSearchKey();
+                    const int    newAge = promptInt("New age");
+                    storage.updateAge(key, newAge);
+                    cout << "Age updated.\n";
+                    break;
+                }
+
                 case 'r':
-                    storage.remove(inputUser());
+                    storage.remove(promptSearchKey());
+                    cout << "Worker removed.\n";
                     break;
+
                 case 'c':
-                    storage.search(inputUser()) !=-1 ? cout<<"lavoratore in lista":cout<<"lavratore non in lista";
+                    printList(storage.find(promptSearchKey()),
+                              "No matching worker.\n");
                     break;
+
+                case 'f':
+                    printList(storage.filterByAssignment(promptLine("Filter by assignment")),
+                              "No worker with that assignment.\n");
+                    break;
+
+                case 's':
+                    storage.sortBy(promptLine("Sort by [name|surname|age|assignment]"));
+                    cout << "Workers sorted.\n";
+                    break;
+
+                case 'i':
+                    cout << storage.statistics();
+                    break;
+
                 case 'h':
-                    cout<<storage.helloByAll()<<endl;
+                case 'g':
+                    cout << storage.helloByAll();
                     break;
+
                 default:
-                    cerr << "\nScelta non valida" << endl;
+                    cerr << "Invalid choice. Type ? for the menu.\n";
                     break;
             }
-        }catch (exception &e){
-            cout<<e.what();
+        } catch (const exception &e) {
+            // Centralized error reporting keeps the loop responsive
+            // even when individual operations throw.
+            cerr << "[error] " << e.what() << "\n";
         }
-
-    } while (choice != 'e');
-
+    }
 
     return 0;
 }
 
- string inputUser(){
+// --------------------------------------------------------- helpers impl
+
+static void printMenu() {
+    cout << "\n=== JsonManager menu ===\n";
+    cout << " p) print all workers\n";
+    cout << " n) add a new worker\n";
+    cout << " m) modify a worker's assignment\n";
+    cout << " a) update a worker's age\n";
+    cout << " r) remove a worker\n";
+    cout << " c) search a worker (case-insensitive substring)\n";
+    cout << " f) filter workers by assignment\n";
+    cout << " s) sort workers (name|surname|age|assignment)\n";
+    cout << " i) statistics\n";
+    cout << " g) greetings from all workers\n";
+    cout << " k) clear the whole JSON\n";
+    cout << " ?) show this menu\n";
+    cout << " e) exit\n";
+}
+
+static string promptLine(const string &label) {
+    cout << label << ": ";
     string s;
-    cout<<" puoi cercare il worker per nome/cognome/codice fiscale : ";
-    getline(cin,s);
+    getline(cin, s);
     return s;
+}
+
+static string promptSearchKey() {
+    return promptLine("Search worker by name/surname/tax code");
+}
+
+/**
+ * Reads an integer from stdin, retrying on garbage input.
+ * Using getline + stoi avoids leaving cin in a fail state — the original
+ * `cin >> age` flow could silently break the rest of the menu.
+ */
+static int promptInt(const string &label) {
+    while (true) {
+        const string raw = promptLine(label);
+        try {
+            size_t    pos = 0;
+            const int v   = stoi(raw, &pos);
+            if (pos != raw.size()) throw runtime_error("trailing characters");
+            return v;
+        } catch (...) {
+            cerr << "Please type a valid integer.\n";
+        }
+    }
+}
+
+static void printList(const vector<string> &items, const string &emptyMessage) {
+    if (items.empty()) {
+        cout << emptyMessage;
+        return;
+    }
+    for (const auto &s : items) cout << s;
 }

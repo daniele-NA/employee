@@ -1,24 +1,28 @@
 #ifndef JSONMANAGER_WORKER_H
 #define JSONMANAGER_WORKER_H
 
-#include "Person.h"
 #include <string>
+#include "Person.h"
 
+/**
+ * Concrete person who has a job role ("assignment").
+ * Inherits all identity fields and validation from Person.
+ */
 class Worker : public Person {
 private:
-    string assignment;  // Parametro variabile, si può cambiare il ruolo
+    string assignment;  // Mutable — workers can change role over time.
 
 public:
-    // Costruttore
     Worker(string name, string surname, string tax_code, int age, string assignment);
 
-    // Override dei metodi puri virtuali della classe Person
-    string toString() override;
-    string hello() override;
+    // Polymorphic rendering hooks declared in Person.
+    string toString() const override;
+    string hello()    const override;
 
-    // Getter e Setter per 'assignment',verranno poi implementati nel worker.cpp
     const string &getAssignment() const;
-    void setAssignment(const string& newAssignment);
+
+    /** Validated setter: trims and rejects empty values. */
+    void setAssignment(const string &newAssignment);
 };
 
 #endif // JSONMANAGER_WORKER_H

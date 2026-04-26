@@ -1,93 +1,90 @@
-
 #ifndef JSONMANAGER_STORAGE_H
 #define JSONMANAGER_STORAGE_H
 
-#include <iostream>
-#include <fstream>
-#include "vector"
-#include"../model/Worker.h"
-#include "../libs/json.hpp"  // Libreria json.hpp
-#include "error.h"
-#include "../utils/JsonParamFeatures.h"
-#include "../utils/Function.h"
+#include <string>
+#include <vector>
+#include "../model/Worker.h"
 #include "../parser/JsonParser.h"
 
 using namespace std;
+
 /**
- * la classe permette lo storage dei workers e i metodi ceh proteggono la classe JsonParser
+ * In-memory collection of Worker plus all the business operations
+ * exposed to the UI. Every mutation is flushed to disk immediately
+ * via JsonParser, so the file on disk is always in sync with this
+ * vector after a successful operation.
  */
 class Storage {
 private:
-    /**
-     * field protetto da metodi che si carica dentro i dati del json
-     */
-    vector<Worker> workers;
-protected:
-    JsonParser jsonParser; //limitato allo Storage.cpp
-    string current_file_path; //path del file corrente
+    vector<Worker> workers;       // Authoritative in-memory collection.
+    JsonParser     jsonParser;    // I/O helper.
+    string         current_file_path;
 
-    /**
-     * metodo che viene richiamato ad ogni operazione di SCRITTURA sui dati
-     */
+    /** Persists the current vector to disk (full overwrite). */
     void write();
 
 public:
-
-    /**
-     * si andrà ad esaminare il path,per poi caricare tutto nella classe vector
-     * @param filePath per il path del file json
-     */
-    Storage(string &filePath);
-
-     /**
-      * costruttore vuoto per la split tra dichiarazione e assegnazione
-      */
     Storage();
 
     /**
-     * permette la stampa di tutti i parametri
-     * @return string
+     * Loads workers from @p filePath. The path is normalized once and
+     * stored, so subsequent writes do not require the caller to keep it.
      */
-    string printAll();
+    explicit Storage(const string &filePath);
 
-    string helloByAll();
+    // ----- read-only views -----
 
-    /**
-     * pulisce il json ed ovvimente il vettore
-     */
+    /** Multi-line dump of every worker. */
+    string printAll() const;
+
+    /** One greeting per worker, concatenated. */
+    string helloByAll() const;
+
+    /** Aggregate metrics: count, age range, role distribution. */
+    string statistics() const;
+
+    /** Number of workers currently loaded. */
+    size_t size() const { return workers.size(); }
+
+    // ----- mutating operations (each persists to disk on success) -----
+
+    /** Empties both the in-memory vector and the file. */
     void clear();
 
     /**
-     * nuovo lavoratore
-     * @param name [string]
-     * @param surname [string]
-     * @param tax_code [string]
-     * @param age [int]
-     * @param assignment [string]
+     * Appends a brand new worker. Tax codes are unique: a duplicate
+     * raises a runtime_error and the file is left untouched.
      */
     void newWorker(string name, string surname, string tax_code, int age, string assignment);
 
-    /**
-     * modifica del ruolo del lavoratore,tutto il resto è univoco
-     * @param str [string]
-     * @param new_assignment [string]
-     */
-    void edit(string str,string new_assignment);
+    /** Updates the assignment of the first worker matching @p key. */
+    void edit(const string &key, const string &new_assignment);
+
+    /** Updates the age of the first worker matching @p key. */
+    void updateAge(const string &key, int new_age);
+
+    /** Removes the first worker matching @p key. */
+    void remove(const string &key);
 
     /**
-     * si rimuove il lavoratore dalla lista e si riscrive sul json
-     * @param str [string]
+     * Re-orders workers by the given @p field
+     * (one of: "name", "surname", "age", "assignment" / "role").
      */
-    void remove(string str);
+    void sortBy(const string &field);
+
+    // ----- lookup helpers -----
 
     /**
-     *
-     * @param str [string]
-     * @return [int] , l'indice della posizione ? -1=non trovato : >=0 = trovato
+     * Case-insensitive substring search across name/surname/tax code.
+     * @return index of the first match, or -1 if none found.
      */
-    int search(string str);
+    int search(const string &key) const;
 
+    /** Like search() but returns the rendered toString of every match. */
+    vector<string> find(const string &key) const;
 
+    /** Workers whose assignment contains @p assignment (case-insensitive). */
+    vector<string> filterByAssignment(const string &assignment) const;
 };
 
-#endif //JSONMANAGER_STORAGE_H
+#endif // JSONMANAGER_STORAGE_H

@@ -1,94 +1,178 @@
+#include "Storage.h"
 
+#include <algorithm>
+#include <climits>
+#include <iomanip>
+#include <map>
+#include <sstream>
 #include <utility>
-#include"../model/Worker.h"
-#include "../libs/json.hpp"  // Libreria json.hpp
-#include "../utils/JsonParamFeatures.h"
-#include "../parser/JsonParser.h"
-#include "../storage/Storage.h"
+
+#include "../utils/Function.h"
 
 using namespace std;
 
-/**
- * implementazione dello storage.h ,
- * tutta la descrizione dei metodi si trova nel .h
- * @param filePath
- */
+Storage::Storage() = default;
 
-Storage::Storage(string &filePath) {
-
-    /**
-     * si occupa la classe Jsonparser di analizzare il json
-     */
-    workers = jsonParser.analyze(filePath);
-
-    //se tutto va a buon fine,si imposta il path
-    current_file_path = filePath;
+Storage::Storage(const string &filePath) {
+    // Normalize the path once and remember it, so all later writes
+    // target the same file even if the caller mutates its own copy.
+    current_file_path = JsonParser::normalizePath(filePath);
+    workers           = jsonParser.analyze(current_file_path);
 }
-
-// costruttore vuoto per la split
-Storage::Storage() {}
-
-string Storage::printAll() {
-    string rst;
-    for (auto &worker: workers) {
-        rst += worker.toString();
-    }
-    return rst;
-}
-
-string Storage::helloByAll() {
-    string rst;
-    for (auto &worker: workers) {
-        rst += worker.hello();
-    }
-    return rst;
-}
-
 
 void Storage::write() {
-    jsonParser.clearJson(current_file_path);
     jsonParser.writeWorkersToJson(workers, current_file_path);
 }
 
+// ----------------------------------------------------------------- views
+
+string Storage::printAll() const {
+    if (workers.empty()) return "(no workers)\n";
+    string out;
+    for (const auto &w : workers) out += w.toString();
+    return out;
+}
+
+string Storage::helloByAll() const {
+    if (workers.empty()) return "(no workers to greet)\n";
+    string out;
+    for (const auto &w : workers) out += w.hello();
+    return out;
+}
+
+string Storage::statistics() const {
+    if (workers.empty()) return "No workers loaded.\n";
+
+    double          sumAge = 0.0;
+    int             minAge = INT_MAX;
+    int             maxAge = INT_MIN;
+    map<string,int> byAssignment;
+
+    for (const auto &w : workers) {
+        const int a = w.getAge();
+        sumAge += a;
+        if (a < minAge) minAge = a;
+        if (a > maxAge) maxAge = a;
+        byAssignment[w.getAssignment()]++;
+    }
+
+    ostringstream oss;
+    oss << fixed << setprecision(2);
+    oss << "=== Statistics ===\n";
+    oss << "Total workers: " << workers.size() << "\n";
+    oss << "Average age:   " << (sumAge / static_cast<double>(workers.size())) << "\n";
+    oss << "Min age:       " << minAge << "\n";
+    oss << "Max age:       " << maxAge << "\n";
+    oss << "By assignment:\n";
+    for (const auto &kv : byAssignment) {
+        oss << "  - " << kv.first << ": " << kv.second << "\n";
+    }
+    return oss.str();
+}
+
+// --------------------------------------------------------- mutating ops
+
 void Storage::clear() {
-    workers.clear(); //svuota anche la lista ovviamente
+    workers.clear();
     jsonParser.clearJson(current_file_path);
 }
 
 void Storage::newWorker(string name, string surname, string tax_code, int age, string assignment) {
-    Worker w = {std::move(name), std::move(surname), std::move(tax_code), age, std::move(assignment)};
-    workers.push_back(w);
-    write();
-}
+    // Build (and validate) the worker before touching the vector.
+    Worker w(std::move(name), std::move(surname), std::move(tax_code),
+             age, std::move(assignment));
 
-void Storage::edit(string str, string new_assignment) {
-    int index = search(str);
-    if (index == -1) {
-        throw runtime_error("lavoratore non trovato");
+    // Tax code is the unique identifier — refuse duplicates.
+    for (const auto &existing : workers) {
+        if (existing.getTaxCode() == w.getTaxCode()) {
+            throw runtime_error("A worker with this tax code already exists");
+        }
     }
-    workers[index].setAssignment(new_assignment);
+
+    workers.push_back(std::move(w));
     write();
 }
 
-void Storage::remove(std::string str) {
-    int index = search(str);
-    if (index == -1) {
-        throw runtime_error("lavoratore non trovato");
+void Storage::edit(const string &key, const string &new_assignment) {
+    const int idx = search(key);
+    if (idx == -1) throw runtime_error("Worker not found");
+    workers[idx].setAssignment(new_assignment);
+    write();
+}
+
+void Storage::updateAge(const string &key, int new_age) {
+    const int idx = search(key);
+    if (idx == -1) throw runtime_error("Worker not found");
+    workers[idx].setAge(new_age);
+    write();
+}
+
+void Storage::remove(const string &key) {
+    const int idx = search(key);
+    if (idx == -1) throw runtime_error("Worker not found");
+    workers.erase(workers.begin() + idx);
+    write();
+}
+
+void Storage::sortBy(const string &fieldRaw) {
+    const string field = Function::toLower(Function::trim(fieldRaw));
+
+    if (field == "name") {
+        std::sort(workers.begin(), workers.end(),
+                  [](const Worker &a, const Worker &b) { return a.getName() < b.getName(); });
+    } else if (field == "surname") {
+        std::sort(workers.begin(), workers.end(),
+                  [](const Worker &a, const Worker &b) { return a.getSurname() < b.getSurname(); });
+    } else if (field == "age") {
+        std::sort(workers.begin(), workers.end(),
+                  [](const Worker &a, const Worker &b) { return a.getAge() < b.getAge(); });
+    } else if (field == "assignment" || field == "role") {
+        std::sort(workers.begin(), workers.end(),
+                  [](const Worker &a, const Worker &b) { return a.getAssignment() < b.getAssignment(); });
+    } else {
+        throw runtime_error("Unknown sort field. Use: name | surname | age | assignment");
     }
-    workers.erase(workers.begin() + index);
     write();
 }
 
-int Storage::search(std::string str) {
-    str = Function::trim(str);
-    for (int i = 0; i < workers.size(); ++i) {
-        Worker w = workers[i];
-        if (w.getName() == str || w.getSurname() == str || w.getTaxCode() == str) {
-            return i;
+// --------------------------------------------------------------- lookup
+
+int Storage::search(const string &keyRaw) const {
+    const string key = Function::trim(keyRaw);
+    if (key.empty()) return -1;
+    for (size_t i = 0; i < workers.size(); ++i) {
+        const Worker &w = workers[i];
+        if (Function::icontains(w.getName(),    key) ||
+            Function::icontains(w.getSurname(), key) ||
+            Function::icontains(w.getTaxCode(), key)) {
+            return static_cast<int>(i);
         }
     }
     return -1;
 }
 
+vector<string> Storage::find(const string &keyRaw) const {
+    const string key = Function::trim(keyRaw);
+    vector<string> results;
+    if (key.empty()) return results;
+    for (const auto &w : workers) {
+        if (Function::icontains(w.getName(),    key) ||
+            Function::icontains(w.getSurname(), key) ||
+            Function::icontains(w.getTaxCode(), key)) {
+            results.push_back(w.toString());
+        }
+    }
+    return results;
+}
 
-
+vector<string> Storage::filterByAssignment(const string &assignmentRaw) const {
+    const string a = Function::trim(assignmentRaw);
+    vector<string> results;
+    if (a.empty()) return results;
+    for (const auto &w : workers) {
+        if (Function::icontains(w.getAssignment(), a)) {
+            results.push_back(w.toString());
+        }
+    }
+    return results;
+}

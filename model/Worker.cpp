@@ -1,41 +1,40 @@
 #include "Worker.h"
-#include <stdexcept>
+#include "../utils/Function.h"
 #include <utility>
 
 /**
- * questo costruttore si prende carico di tutti i parametri della claae stessa
- * e della superclasse PERSON.H
- * @author daniele
- * @param name [string]
- * @param surname [string]
- * @param tax_code [string]
- * @param age [int]
- * @param assignment [string]
+ * Forwards identity fields to Person and initializes the role.
+ * The assignment is trimmed and validated for emptiness.
  */
-Worker::Worker(string name, string surname, string tax_code, int age, string assignment)
-        : Person(std::move(name), std::move(surname), std::move(tax_code), age), assignment(std::move(assignment)) {
-    // La lista di inizializzazione chiama il costruttore della classe base Person
+Worker::Worker(string name, string surname, string tax_code, int age, string assignmentRaw)
+    : Person(std::move(name), std::move(surname), std::move(tax_code), age),
+      assignment(Function::trim(assignmentRaw)) {
+    checkStr(assignment);
 }
 
-// Implementazione del metodo toString()
-string Worker::toString() {
-    return "Nome: " + getName() + ", Cognome: " + getSurname() + ", Codice Fiscale: " + getTaxCode() +
-           ", Eta: " + std::to_string(getAge()) + ", Ruolo: " + assignment+"\n\n";
+string Worker::toString() const {
+    return "Name: " + getName()
+         + ", Surname: " + getSurname()
+         + ", Tax code: " + getTaxCode()
+         + ", Age: " + std::to_string(getAge())
+         + ", Assignment: " + assignment + "\n";
 }
 
-// Implementazione del metodo hello()
-string Worker::hello() {
-    return "Ciao, sono " + getName() + " " + getSurname() + " e sono un "+getAssignment()+" !!\n";
+string Worker::hello() const {
+    return "Hi, I'm " + getName() + " " + getSurname()
+         + " and I'm a " + assignment + "!\n";
 }
 
-// Getter per assignment
-const string & Worker::getAssignment() const { //implementazione del get
+const string &Worker::getAssignment() const {
     return assignment;
 }
 
-// Setter per assignment
-void Worker::setAssignment(const string& newAssignment) {
-    assignment=Function::trim(assignment);  //utils
-    checkStr(assignment);  //controllo con metodo della superclasse
-    assignment = newAssignment;
+/**
+ * Validates the *new* value (the original code mistakenly trimmed and
+ * checked the old field, then silently overwrote it without validation).
+ */
+void Worker::setAssignment(const string &newAssignment) {
+    string a = Function::trim(newAssignment);
+    checkStr(a);
+    assignment = std::move(a);
 }
